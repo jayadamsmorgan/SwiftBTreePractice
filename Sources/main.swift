@@ -1,145 +1,115 @@
-public typealias CompareFunction<T> = (T, T) -> Bool
+public class BTreeNode<Key: Comparable, Value> {
 
-public struct NotImplementedError: Error {
-    let message: String
-}
+    unowned var owner: BTree<Key, Value>
 
-public class BTreeNode<T: Comparable> {
+    fileprivate var keys = [Key]()
+    fileprivate var values = [Value]()
+    var children: [BTreeNode]?
 
-    public let capacity: Int
-    public var minimumCapacity: Int { return capacity / 2 }
-
-    public var isRoot: Bool { return parent == nil }
-
-    public var parent: BTreeNode? = nil
-
-    private var keys: [T]
-    private var children: [BTreeNode]
-
-    public func getKeys() -> [T] {
-        return keys
+    var isLeaf: Bool {
+        return children == nil
     }
 
-    public func getChildren() -> [BTreeNode] {
-        return children
+    var numberOfKeys: Int {
+        return keys.count
     }
 
-    public var leaf: Bool { return children.isEmpty }
+    init(owner: BTree<Key, Value>) {
+        self.owner = owner
+    }
 
-    private var customCompare: CompareFunction<T>? = nil
+    convenience init(owner: BTree<Key, Value>, keys: [Key], values: [Value], children: [BTreeNode]? = nil) {
+        self.init(owner: owner)
+        self.keys += keys
+        self.values += values
+        self.children = children
+    }
 
-    public init?(capacity: Int, customCompare: CompareFunction<T>? = nil) {
-        if capacity < 1 {
+    func value(for key: Key) -> Value? {
+        guard let index = keys.firstIndex(where: { $0 <= key }) else {
             return nil
         }
-        self.keys = []
-        self.children = []
-        self.capacity = capacity
-        self.customCompare = customCompare
+        if key == keys[index] { return values[index] }
+        if key < keys[index] { return children?[index].value(for: key) }
+        return children?[index + 1].value(for: key)
     }
 
-    private init(capacity: Int, keys: [T], children: [BTreeNode], parent: BTreeNode? = nil) {
-        self.keys = keys
-        self.children = children
-        self.capacity = capacity
-        self.parent = parent
-    }
-
-    private func sort() {
-        if let compare = customCompare {
-            keys.sort(by: compare)
-        } else {
-            keys.sort()
+    func traverseKeysInOrder(_ process: (Key) -> Void) {
+        for i in 0..<numberOfKeys {
+            children?[i].traverseKeysInOrder(process)
+            process(keys[i])
         }
+        children?.last?.traverseKeysInOrder(process)
     }
 
-    public func exists(_ key: T) -> Bool {
-        find(key) != nil
-    }
+    func insert(_ value: Value, for key: Key) {
+        var index = keys.startIndex
 
-    public func find(_ key: T) -> T? {
-        for i in 0..<keys.count {
-            if key < keys[i] {
-                if !leaf {
-                    return children[i].find(key)
-                }
-                return nil
-            }
-            if key == keys[i] {
-                return keys[i]
-            }
+        while index < keys.endIndex && keys[index] < key {
+            index = index + 1
         }
-        return nil
-    }
 
-    public func delete(_ key: T) -> Error? {
-        return NotImplementedError(message: "Delete function not implemented yet.")
-    }
-
-    public func insert(_ key: T) {
-        if keys.count < capacity && leaf {
-            keys.append(key)
-            sort()
+        if index < keys.endIndex && keys[index] == key {
+            values[index] = value
             return
         }
-        if !leaf {
-            for i in 0..<keys.count {
-                if key < keys[i] {
-                    children[i].insert(key)
-                    return
-                }
-            }
-            children.last!.insert(key)
+        
+        if isLeaf {
+            keys.insert(key, at: index)
+            values.insert(value, at: index)
+            owner.numberOfKeys += 1
             return
         }
-        if keys.count > capacity {
-            split()
-        }
-        keys.append(key)
-        sort()
-    }
-
-    private func split() {
-        if isRoot {
-            if leaf {
-                let leftKeys = Array(keys.prefix(upTo: minimumCapacity))
-                let rightKeys = Array(keys.suffix(from: minimumCapacity + 1))
-                keys = [keys[Int(minimumCapacity)]]
-                let leftChild = BTreeNode<T>(capacity: capacity, keys: leftKeys, children: [], parent: self)
-                let rightChild = BTreeNode<T>(capacity: capacity, keys: rightKeys, children: [], parent: self)
-                children = [leftChild, rightChild]
-                return
-            }
-
+        guard let child = children?[index] else { return }
+        child.insert(value, for: key)
+        if child.numberOfKeys > owner.order * 2 {
+            split(child: child, at: index)
         }
     }
-}
 
-func printTree<T>(_ node: BTreeNode<T>, level: Int = 0) {
-    print("Level \(level): \(node.getKeys())")
-    for child in node.getChildren() {
-        printTree(child, level: level + 1)
+    private func split(child: BTreeNode, at index: Int) {
+        let middleIndex = child.numberOfKeys / 2
+        keys.insert(child.keys[middleIndex], at: index)
+        values.insert(child.values[middleIndex], at: index)
+        child.keys.remove(at: middleIndex)
+        child.values.remove(at: middleIndex)
+
+        let rightSibling = BTreeNode(
+            owner: owner,
+            keys: Array(child.keys[child.keys.indices.suffix(from: middleIndex)]),
+            values: Array(child.values[child.values.indices.suffix(from: middleIndex)])
+        )
+
+        child.keys.removeSubrange(child.keys.indices.suffix(from: middleIndex))
+        child.values.removeSubrange(child.values.indices.suffix(from: middleIndex))
+
+        children!.insert(rightSibling, at: index + 1)
+
+        if var childChildren = child.children {
+            rightSibling.children = Array(
+                childChildren[child.children!.indices.suffix(from: middleIndex + 1)]
+            )
+            childChildren.removeSubrange(childChildren.indices.suffix(from: middleIndex + 1))
+        }
     }
+
 }
 
-let node = BTreeNode<Int>(capacity: 4)!
+public class BTree<Key: Comparable, Value> {
 
-node.insert(12)
-node.insert(11)
-node.insert(16)
-node.insert(15)
-node.insert(13)
-node.insert(17)
-node.insert(14)
-node.insert(8)
-node.insert(9)
-node.insert(10)
-node.insert(18)
-node.insert(19)
-node.insert(20)
-// node.insert(21)
-// node.insert(22)
-printTree(node)
-print("----")
+    public let order: Int
 
+    var rootNode: BTreeNode<Key, Value>!
+
+    fileprivate(set) public var numberOfKeys: Int = 0
+
+    public init?(order: Int) {
+        guard order > 0 else {
+            return nil
+        }
+        self.order = order
+        rootNode = BTreeNode<Key, Value>(owner: self)
+    }
+
+}
 
