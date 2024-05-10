@@ -1,9 +1,13 @@
 public typealias CompareFunction<T> = (T, T) -> Bool
 
+public struct NotImplementedError: Error {
+    let message: String
+}
+
 public class BTreeNode<T: Comparable> {
 
-    public let capacity: UInt
-    public var minimumCapacity: UInt { return capacity / 2 }
+    public let capacity: Int
+    public var minimumCapacity: Int { return capacity / 2 }
 
     public var isRoot: Bool { return parent == nil }
 
@@ -12,7 +16,7 @@ public class BTreeNode<T: Comparable> {
     private var keys: [T]
     private var children: [BTreeNode]
 
-    public func getKeys() -> [any Comparable] {
+    public func getKeys() -> [T] {
         return keys
     }
 
@@ -24,14 +28,17 @@ public class BTreeNode<T: Comparable> {
 
     private var customCompare: CompareFunction<T>? = nil
 
-    public init(capacity: UInt, customCompare: CompareFunction<T>? = nil) {
+    public init?(capacity: Int, customCompare: CompareFunction<T>? = nil) {
+        if capacity < 1 {
+            return nil
+        }
         self.keys = []
         self.children = []
         self.capacity = capacity
         self.customCompare = customCompare
     }
 
-    private init(capacity: UInt, keys: [T], children: [BTreeNode], parent: BTreeNode? = nil) {
+    private init(capacity: Int, keys: [T], children: [BTreeNode], parent: BTreeNode? = nil) {
         self.keys = keys
         self.children = children
         self.capacity = capacity
@@ -46,8 +53,30 @@ public class BTreeNode<T: Comparable> {
         }
     }
 
+    public func exists(_ key: T) -> Bool {
+        find(key) != nil
+    }
 
-    func insert(_ key: T) {
+    public func find(_ key: T) -> T? {
+        for i in 0..<keys.count {
+            if key < keys[i] {
+                if !leaf {
+                    return children[i].find(key)
+                }
+                return nil
+            }
+            if key == keys[i] {
+                return keys[i]
+            }
+        }
+        return nil
+    }
+
+    public func delete(_ key: T) -> Error? {
+        return NotImplementedError(message: "Delete function not implemented yet.")
+    }
+
+    public func insert(_ key: T) {
         if keys.count < capacity && leaf {
             keys.append(key)
             sort()
@@ -63,52 +92,26 @@ public class BTreeNode<T: Comparable> {
             children.last!.insert(key)
             return
         }
-        keys.append(key)
-        sort()
         if keys.count > capacity {
             split()
         }
+        keys.append(key)
+        sort()
     }
 
     private func split() {
-        let leftKeys = Array(keys[0..<Int(minimumCapacity)])
-        let rightKeys = Array(keys[Int(minimumCapacity + 1)...])
-        var leftChildren: [BTreeNode] = []
-        var rightChildren: [BTreeNode] = []
-        if !leaf {
-            leftChildren = Array(children[0..<Int(minimumCapacity) + 1])
-            rightChildren = Array(children[Int(minimumCapacity + 1)...])
-        }
-        let leftNode = BTreeNode(capacity: capacity, keys: leftKeys, children: leftChildren, parent: self)
-        for child in leftNode.children {
-            child.parent = leftNode
-        }
-        let rightNode = BTreeNode(capacity: capacity, keys: rightKeys, children: rightChildren, parent: self)
-        for child in rightNode.children {
-            child.parent = rightNode
-        }
         if isRoot {
-            keys = [keys[Int(minimumCapacity)]]
-            children = [leftNode, rightNode]
-            return
+            if leaf {
+                let leftKeys = Array(keys.prefix(upTo: minimumCapacity))
+                let rightKeys = Array(keys.suffix(from: minimumCapacity + 1))
+                keys = [keys[Int(minimumCapacity)]]
+                let leftChild = BTreeNode<T>(capacity: capacity, keys: leftKeys, children: [], parent: self)
+                let rightChild = BTreeNode<T>(capacity: capacity, keys: rightKeys, children: [], parent: self)
+                children = [leftChild, rightChild]
+                return
+            }
+
         }
-        // print("parent: \(parent!.keys)")
-        guard let index = parent!.children.firstIndex(where: { $0 === self }) else {
-            print("Error: parent does not have a reference to this node")
-            print("Parent keys: \(parent!.keys)")
-            print("Parent children: \(parent!.children)")
-            print("This node keys: \(keys)")
-            print("This node children: \(children)")
-            return
-        }
-        parent!.keys.insert(keys[Int(minimumCapacity)], at: index)
-        parent!.children.removeAll(where: { $0 === self })
-        parent!.children.insert(leftNode, at: index)
-        parent!.children.insert(rightNode, at: index + 1)
-        if parent!.keys.count > capacity {
-            parent!.split()
-        }
-        parent = nil
     }
 }
 
@@ -119,7 +122,7 @@ func printTree<T>(_ node: BTreeNode<T>, level: Int = 0) {
     }
 }
 
-let node = BTreeNode<Int>(capacity: 4)
+let node = BTreeNode<Int>(capacity: 4)!
 
 node.insert(12)
 node.insert(11)
@@ -134,7 +137,7 @@ node.insert(10)
 node.insert(18)
 node.insert(19)
 node.insert(20)
-node.insert(21)
+// node.insert(21)
 // node.insert(22)
 printTree(node)
 print("----")
